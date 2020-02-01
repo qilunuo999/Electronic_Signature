@@ -1,0 +1,27 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resource/图片/save 保存文档.png</file>
+        <file>resource/图片/open.png</file>
+        <file>resource/图片/最后一页.png</file>
+        <file>resource/图片/制作印章.png</file>
+        <file>resource/图片/隐藏.png</file>
+        <file>resource/图片/验证.png</file>
+        <file>resource/图片/下一页.png</file>
+        <file>resource/图片/退出.png</file>
+        <file>resource/图片/跳转页面.png</file>
+        <file>resource/图片/缩小.png</file>
+        <file>resource/图片/书.png</file>
+        <file>resource/图片/适合页面.png</file>
+        <file>resource/图片/上一页.png</file>
+        <file>resource/图片/全屏.png</file>
+        <file>resource/图片/另存为.png</file>
+        <file>resource/图片/关闭.png</file>
+        <file>resource/图片/盖章.png</file>
+        <file>resource/图片/放大.png</file>
+        <file>resource/图片/第一页.png</file>
+        <file>resource/图片/撤章.png</file>
+        <file>resource/图片/user.png</file>
+        <file>resource/图片/edit.png</file>
+        <file>resource/图片/提案审批.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,356 @@
+#include "include/interface/makesealwindow.h"
+#include "ui_makesealdialog.h"
+
+using namespace std;
+
+// ---- rsa非对称加解密 ---- //
+#define KEY_LENGTH  2048               // 密钥长度
+#define PUB_KEY_FILE "pubkey.key"    // 公钥路径
+#define PRI_KEY_FILE "prikey.key"    // 私钥路径
+
+MakeSealWindow::MakeSealWindow(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::MakeSealWindow)
+{
+    ui->setupUi(this);
+}
+
+MakeSealWindow::~MakeSealWindow()
+{
+    delete ui;
+}
+
+void MakeSealWindow::on_pushButton_clicked()
+{
+    QString country = ui->country->currentText();
+    QString province = ui->province->text();
+    QString location = ui->location->text();
+    QString company = ui->company->text();
+    QString user = ui->user->text();//签发人
+    QString name = ui->name->text();//签章用户
+    QString pwd = ui->pwd->text();
+    QString endtime = ui->endtime->text();
+    QString stardate = QDateTime::currentDateTime().toString(Qt::ISODate);
+    QDateTime tempTime1 = QDateTime::fromString(stardate, "yyyy-MM-ddThh:mm:ss");
+    QDateTime tempTime2 = QDateTime::fromString(endtime, "yyyy-MM-dd hh:mm:ss");
+    uint sTime = tempTime1.toTime_t();
+    uint eTime = tempTime2.toTime_t();
+    uint ndaysec = 24*60*60;
+    QString effectiveTime = QString::number((eTime - sTime)/ndaysec, 10);
+
+    if(company.isEmpty())
+    {
+        QMessageBox::warning(this,QObject::tr("警告"),QObject::tr("签发人/单位不能为空！"),QMessageBox::Abort);
+        return;
+    }
+    if(user.isEmpty())
+    {
+        QMessageBox::warning(this,QObject::tr("警告"),QObject::tr("签发人/单位不能为空！"),QMessageBox::Abort);
+        return;
+    }
+    if(name.isEmpty())
+    {
+        QMessageBox::warning(this,QObject::tr("警告"),QObject::tr("签章用户不能为空！"),QMessageBox::Abort);
+        return;
+    }
+    if(pwd.isEmpty())
+    {
+        QMessageBox::warning(this,QObject::tr("警告"),QObject::tr("密码不能为空！"),QMessageBox::Abort);
+        return;
+    }
+    if(tempTime1 > tempTime2)
+    {
+        QMessageBox::warning(this,QObject::tr("警告"),QObject::tr("截止日期不能在当前日期之前！\n例如：今天是2018年8月18日，截止日期不能设置为2018年8月17日以及更早的时间"),QMessageBox::Abort);
+        return;
+    }
+    //用于调用openssl生成印章的证书
+    QString syscmd ="openssl x509 -req -in " + sealDialog + "/seal.csr  -out " + sealDialog + "/" + name+ ".crt   -signkey " + sealDialog + "/prikey.key  -CA "+ certificate +" -CAkey "+ certificateKey +" -CAcreateserial -days " + effectiveTime;
+    QString createSealCertificate = "openssl req -utf8 -new -key " + sealDialog + " /prikey.key -out " + sealDialog + "/seal.csr -nodes -subj \"/C=" + country + "/ST=" + province + "/L=" + location + "/O=" + company + "/OU=" + user + "/CN=" + name + "\"";
+
+    std::string str_company = company.toStdString();
+    std::string str_user = user.toStdString();
+    std::string str_name = name.toStdString();
+    std::string str_pwd = pwd.toStdString();
+    std::string str_endtime = endtime.toStdString();
+    std::string str_stardate = stardate.toStdString();
+    std::string encryptText;//RSA私钥加密后的字符串
+    std::string key[2];//密钥对
+
+    const char* cmd;
+    const char* str_csc;
+    QByteArray c = syscmd.toLocal8Bit();
+    QByteArray csc = createSealCertificate.toUtf8();
+    cmd = c.data();
+    str_csc = csc.data();
+
+
+    QDateTime time = QDateTime::currentDateTime();   //获取当前时间
+    unsigned int startime_stmp = time.toTime_t();   //将当前时间转为时间戳
+    QString startime_stmp2 = QString::number(startime_stmp);//转换成字符
+
+    //基本信息组合，进行RSA加密
+    QString information = company + "/" + user + "/" + name + "/" + pwd + "/" + startime_stmp2 + "/" +stardate + "/" + endtime ;
+    std::string str_information = information.toStdString();
+
+    generateRSAKey(key);
+    system(str_csc);// 根据私钥文件，为应用证书/中级证书生成 csr 文件（证书请求文件）
+    system(cmd);//给用户私钥颁发证书
+
+    file_fullpath2 = file_fullpath;
+    file_fullpath2 = sealDialog+"/"+name+"."+file_suffix;
+
+    QFile::copy(file_fullpath, file_fullpath2);
+    QString certification = sealDialog + "/" + name+ ".crt";
+    ifstream pdfCertification;
+    ofstream outFile;
+    pdfCertification.open(certification.toStdString());
+    outFile.open(file_fullpath2.toStdString(),ios::app);
+    outFile << endl<< "__Delimiter__" << endl;
+    outFile << startime_stmp << endl;   //签发时间戳
+    outFile << str_stardate << endl;     //签发时间
+    outFile << str_endtime << endl;      //印章有效期
+    outFile << "__Delimiter__" << endl;
+    outFile << key[0];        //公钥
+    outFile << "__Delimiter__" << endl;
+    outFile << sha512(str_pwd) << endl; //用户密码hash
+    outFile << "__Delimiter__" << endl;
+    outFile << rsa_pri_encrypt(str_information, key[1]) << endl;//使用私钥对基本信息RSA加密（签名）
+    outFile << "__Delimiter__" << endl;
+    char ch;
+    while(pdfCertification.get(ch))
+    {
+        outFile<<ch;
+    }
+    outFile.close();
+
+
+    ui->textBrowser->setText("创建成功");
+}
+
+void MakeSealWindow::on_pushButton_2_clicked()
+{
+    //定义文件对话框类
+    QFileDialog *fileDialog = new QFileDialog(this);
+    //定义文件对话框标题
+    fileDialog->setWindowTitle(tr("打开图片"));
+    //设置默认文件路径
+    fileDialog->setNameFilter(tr("Images(*.png *.jpg *.jpeg *.bmp)"));
+    //设置可以选择多个文件,默认为只能选择一个文件QFileDialog::ExistingFiles
+    fileDialog->setFileMode(QFileDialog::ExistingFiles);
+    //设置视图模式
+    fileDialog->setViewMode(QFileDialog::Detail);
+    //打印所有选择的文件的路径
+
+
+    file_fullpath = QFileDialog::getOpenFileName(this,tr(""),nullptr,tr(""));
+    ui->pictrue->setText(file_fullpath);
+    info = QFileInfo(file_fullpath);
+
+    file_name = info.fileName();
+    file_suffix = info.suffix();
+}
+
+void MakeSealWindow::on_getCertificateButton_clicked()
+{
+   certificate = QFileDialog::getOpenFileName(this,tr(""),nullptr,tr(""));
+   ui->certificate->setText(certificate);
+}
+
+void MakeSealWindow::on_pushButton_3_clicked()
+{
+    sealDialog = QFileDialog::getExistingDirectory(nullptr, "印章生成位置", ".");
+    ui->sealDialog->setText(sealDialog);
+}
+
+// 生成长度为2048的密钥对
+void MakeSealWindow::generateRSAKey(std::string strKey[2])
+{
+    // 公私密钥对
+    size_t pri_len;
+    size_t pub_len;
+    char *pri_key = nullptr;
+    char *pub_key = nullptr;
+
+    // 生成密钥对
+    RSA *keypair = RSA_generate_key(KEY_LENGTH, RSA_3, nullptr, nullptr);
+
+    BIO *pri = BIO_new(BIO_s_mem());
+    BIO *pub = BIO_new(BIO_s_mem());
+
+    PEM_write_bio_RSAPrivateKey(pri, keypair, nullptr, nullptr, 0, nullptr, nullptr);
+    PEM_write_bio_RSAPublicKey(pub, keypair);
+
+    // 获取长度
+    pri_len = static_cast<size_t>(BIO_pending(pri));
+    pub_len = static_cast<size_t>(BIO_pending(pub));
+
+    // 密钥对读取到字符串
+    pri_key = static_cast<char *>(malloc(pri_len + 1));
+    pub_key = static_cast<char *>(malloc(pub_len + 1));
+
+    BIO_read(pri, pri_key,  static_cast<int>(pri_len));
+    BIO_read(pub, pub_key,  static_cast<int>(pub_len));
+
+    pri_key[pri_len] = '\0';
+    pub_key[pub_len] = '\0';
+
+    // 存储密钥对
+    strKey[0] = pub_key;
+    strKey[1] = pri_key;
+
+    //设置存储目录
+    QString pubSaveDialog = sealDialog + "/" +PUB_KEY_FILE;
+    QString priSaveDialog = sealDialog + "/" + PRI_KEY_FILE;
+    // 存储到磁盘（这种方式存储的是begin rsa public key/ begin rsa private key开头的）
+    FILE *pubFile = fopen(pubSaveDialog.toStdString().c_str(), "w");
+    if (pubFile == nullptr)
+    {
+        assert(false);
+        return;
+    }
+    fputs(pub_key, pubFile);
+    fclose(pubFile);
+
+    FILE *priFile = fopen(priSaveDialog.toStdString().c_str(), "w");
+    if (priFile == nullptr)
+    {
+        assert(false);
+        return;
+    }
+    fputs(pri_key, priFile);
+    fclose(priFile);
+
+    // 内存释放
+    RSA_free(keypair);
+    BIO_free_all(pub);
+    BIO_free_all(pri);
+
+    free(pri_key);
+    free(pub_key);
+}
+
+
+
+// 私钥加密
+std::string MakeSealWindow::rsa_pri_encrypt(const std::string &clearText, const std::string &priKey)
+{
+    std::string strRet;
+    RSA *rsa = nullptr;
+    BIO *keybio = BIO_new_mem_buf(static_cast<const char *>(priKey.c_str()), -1);
+
+    rsa = PEM_read_bio_RSAPrivateKey(keybio, &rsa, nullptr, nullptr);
+
+    size_t len = static_cast<size_t>(RSA_size(rsa));
+    char *encryptedText = static_cast<char *>(malloc(len + 1));
+    memset(encryptedText, 0, len + 1);
+
+    // 加密函数
+    unsigned long ret = static_cast<unsigned long>(RSA_private_encrypt(static_cast<int>(clearText.length()), (const unsigned char*)clearText.c_str(), reinterpret_cast<unsigned char*>(encryptedText), rsa, RSA_PKCS1_PADDING));
+    if (ret > 0)
+        strRet = std::string(encryptedText, ret);
+    strRet = Encode((const unsigned char *)strRet.c_str(),strRet.length());
+
+    // 释放内存
+    free(encryptedText);
+    BIO_free_all(keybio);
+    RSA_free(rsa);
+
+    return strRet;
+}
+
+// 公钥解密
+std::string rsa_pub_decrypt(const std::string &cipherText, const std::string &pubKey)
+{
+    std::string strRet;
+    RSA *rsa = RSA_new();
+    BIO *keybio;
+    keybio = BIO_new_mem_buf(pubKey.c_str(), -1);
+
+    rsa = PEM_read_bio_RSAPublicKey(keybio, &rsa, nullptr, nullptr);
+
+    size_t len = static_cast<size_t>(RSA_size(rsa));
+    char *decryptedText = static_cast<char*>(malloc(len + 1));
+    memset(decryptedText, 0, len + 1);
+
+    // 解密函数
+     unsigned long ret = static_cast<unsigned long>(RSA_public_decrypt(static_cast<int>(cipherText.length()), (const unsigned char*)cipherText.c_str(), reinterpret_cast<unsigned char*>(decryptedText), rsa, RSA_PKCS1_PADDING));
+    if (ret > 0)
+        strRet = std::string(decryptedText, ret);
+
+    // 释放内存
+    free(decryptedText);
+    BIO_free_all(keybio);
+    RSA_free(rsa);
+
+    return strRet;
+}
+
+
+
+//===============================================================================
+std::string MakeSealWindow::sha512(const std::string str)//生成用户密码hash值
+{
+    char buf[5];
+    unsigned char hash[SHA512_DIGEST_LENGTH];
+    SHA512_CTX sha512;
+    SHA512_Init(&sha512);
+    SHA512_Update(&sha512, str.c_str(), str.size());
+    SHA512_Final(hash, &sha512);
+    std::string newString = "";
+    for(int i = 0; i < SHA512_DIGEST_LENGTH; i++)
+    {
+        sprintf(buf,"%02x",hash[i]);
+        newString = newString + buf;
+    }
+
+    return newString;
+}
+
+//base64加密
+std::string MakeSealWindow::Encode(const unsigned char* Data,int DataByte)
+{
+    //编码表
+    const char EncodeTable[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    //返回值
+    string strEncode;
+    unsigned char Tmp[4]={0};
+    int LineLength=0;
+    for(int i=0;i<(int)(DataByte / 3);i++)
+    {
+        Tmp[1] = *Data++;
+        Tmp[2] = *Data++;
+        Tmp[3] = *Data++;
+        strEncode+= EncodeTable[Tmp[1] >> 2];
+        strEncode+= EncodeTable[((Tmp[1] << 4) | (Tmp[2] >> 4)) & 0x3F];
+        strEncode+= EncodeTable[((Tmp[2] << 2) | (Tmp[3] >> 6)) & 0x3F];
+        strEncode+= EncodeTable[Tmp[3] & 0x3F];
+        if(LineLength+=4,LineLength==76) {strEncode+="\r\n";LineLength=0;}
+    }
+    //对剩余数据进行编码
+    int Mod=DataByte % 3;
+    if(Mod==1)
+    {
+        Tmp[1] = *Data++;
+        strEncode+= EncodeTable[(Tmp[1] & 0xFC) >> 2];
+        strEncode+= EncodeTable[((Tmp[1] & 0x03) << 4)];
+        strEncode+= "==";
+    }
+    else if(Mod==2)
+    {
+        Tmp[1] = *Data++;
+        Tmp[2] = *Data++;
+        strEncode+= EncodeTable[(Tmp[1] & 0xFC) >> 2];
+        strEncode+= EncodeTable[((Tmp[1] & 0x03) << 4) | ((Tmp[2] & 0xF0) >> 4)];
+        strEncode+= EncodeTable[((Tmp[2] & 0x0F) << 2)];
+        strEncode+= "=";
+    }
+
+    return strEncode;
+}
+
+
+void MakeSealWindow::on_keyButton_clicked()
+{
+    certificateKey =  QFileDialog::getOpenFileName(this,tr(""),nullptr,tr(""));
+    ui->certificateKey->setText(certificateKey);
+}

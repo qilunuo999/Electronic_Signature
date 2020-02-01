@@ -1,0 +1,15 @@
+
+QMenu {
+    background-color: #FCFCFC;
+    border: 1px solid #8492A6;
+}
+QMenu::item {
+    background-color: transparent;
+}
+MenuItemWidget::hover{
+	border: 1px solid #FFB700;
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FFB90F, stop:0.38 #FDE0BD,stop:0.39 #FFCE69, stop:1 #FFFFE7);
+}
+QMenu::item:selected { 
+    background-color: #654321;
+}
